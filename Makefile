@@ -6,29 +6,36 @@ DOCKER = docker
 # Creates a new NestJS project
 setup:
 	npx @nestjs/cli new $(PROJECT_NAME) --package-manager npm
-	cd $(PROJECT_NAME) && npm install @nestjs/typeorm typeorm sqlite3 dotenv
+	cd $(PROJECT_NAME) && npm install @nestjs/typeorm typeorm dotenv
+	cd $(PROJECT_NAME) && npm install sqlite3 --save
 
 # Creates the basic project structure
 init-structure:
-	mkdir -p $(PROJECT_NAME)/db
 	mkdir -p $(PROJECT_NAME)/src/entities
-	mkdir -p $(PROJECT_NAME)/src/migrations/logs
+	mkdir -p $(PROJECT_NAME)/src/config
 	cd $(PROJECT_NAME) && npx @nestjs/cli generate module logs
 	cd $(PROJECT_NAME) && npx @nestjs/cli generate controller logs
 	cd $(PROJECT_NAME) && npx @nestjs/cli generate service logs
 
-# Creates ORM configuration
+# Creates ORM configuration with DataSourceOptions
 create-ormconfig:
-	echo 'import { DataSource } from "typeorm";' > $(PROJECT_NAME)/typeorm.config.ts
-	echo ' const AppDataSource = new DataSource({' >> $(PROJECT_NAME)/typeorm.config.ts
-	echo '  type: "sqlite",' >> $(PROJECT_NAME)/typeorm.config.ts
-	echo '  database: "db/logs.sqlite",' >> $(PROJECT_NAME)/typeorm.config.ts
-	echo ' entities: ["src/**/*.entity{.ts,.js}"],' >> $(PROJECT_NAME)/typeorm.config.ts
-	echo '  migrations: ["src/migrations/logs/*.ts"],' >> $(PROJECT_NAME)/typeorm.config.ts
-	echo '  synchronize: false,' >> $(PROJECT_NAME)/typeorm.config.ts
-	echo '});' >> $(PROJECT_NAME)/typeorm.config.ts
-	echo 'export default AppDataSource ' >> $(PROJECT_NAME)/typeorm.config.ts
-
+	echo 'import { DataSource, DataSourceOptions } from "typeorm";' > $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo 'import { join } from "path";' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo 'const opt: DataSourceOptions = {' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '  type: "sqlite",' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '  database: join(process.cwd(), "/db/logs.sqlite"),' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '  entities: [join(process.cwd(), "/dist/**/*.entity.{ts,js}")],' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '  migrations: [join(process.cwd(), "/migrations/*.ts")],' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '  synchronize: false,' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '  logging: true,' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '};' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo 'const AppDataSource = new DataSource(opt);' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo 'console.log("conf", opt);' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo '' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
+	echo 'export default AppDataSource;' >> $(PROJECT_NAME)/src/config/typeorm.config.ts
 
 # Creates Entity files
 init-entities:
@@ -43,13 +50,9 @@ init-entities:
 # Creates Migration files
 init-migrations:
 	cd  $(PROJECT_NAME) && npm run build
-	cd  $(PROJECT_NAME) && npx typeorm migration:create src/migrations/logs/CreateLogsTable
-    cd  $(PROJECT_NAME) && npx typeorm migration:generate -d typeorm.config.ts src/migrations/logs
+	cd  $(PROJECT_NAME) && npx typeorm-ts-node-commonjs migration:generate ./migrations/InitMigration -d ./src/config/typeorm.config.ts
+    cd  $(PROJECT_NAME) && npx typeorm-ts-node-commonjs migration:run -d ./src/config/typeorm.config.ts
 
-
-# Creates database file
-init-database:
-	touch $(PROJECT_NAME)/db/logs.sqlite
 
 # Updates LogsService to log data every 10 seconds
 update-logs-service:
@@ -73,6 +76,7 @@ update-logs-service:
 	echo '  }' >> $(PROJECT_NAME)/src/logs/logs.service.ts
 	echo '}' >> $(PROJECT_NAME)/src/logs/logs.service.ts
 
+# Updates LogsModule to include TypeORM support with forRootAsync()
 # Updates LogsModule to include TypeORM support
 update-logs-module:
 	echo 'import { Module } from "@nestjs/common";' > $(PROJECT_NAME)/src/logs/logs.module.ts
@@ -91,24 +95,69 @@ update-logs-module:
 # Updates AppModule and LogsModule
 update-modules:
 	echo 'import { Module } from "@nestjs/common";' > $(PROJECT_NAME)/src/app.module.ts
-	echo 'import { TypeOrmModule } from "@nestjs/typeorm";' >> $(PROJECT_NAME)/src/app.module.ts
+	echo 'import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";' >> $(PROJECT_NAME)/src/app.module.ts
 	echo 'import { LogsModule } from "./logs/logs.module";' >> $(PROJECT_NAME)/src/app.module.ts
-	echo 'import { Logs } from "./entities/logs.entity";' >> $(PROJECT_NAME)/src/app.module.ts
+	echo 'import { join } from "path";' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '' >> $(PROJECT_NAME)/src/app.module.ts
 	echo '@Module({' >> $(PROJECT_NAME)/src/app.module.ts
-	echo '  imports: [TypeOrmModule.forRoot({ type: "sqlite", database: "db/logs.sqlite", entities: [Logs], synchronize: true }), LogsModule],' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '  imports: [' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '    TypeOrmModule.forRootAsync({' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '      useFactory: () => {' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '        const opt: TypeOrmModuleOptions = {' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '          type: "sqlite",' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '          database: join(process.cwd(), "/db/logs.sqlite"),' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '          entities: [join(process.cwd(), "/dist/**/*.entity.{ts,js}")],' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '          synchronize: false,' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '          logging: true,' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '        };' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '        console.log("app", opt);' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '        return opt;' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '      },' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '    }),' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '    LogsModule,' >> $(PROJECT_NAME)/src/app.module.ts
+	echo '  ],' >> $(PROJECT_NAME)/src/app.module.ts
 	echo '})' >> $(PROJECT_NAME)/src/app.module.ts
 	echo 'export class AppModule {}' >> $(PROJECT_NAME)/src/app.module.ts
 
-# Creates `Dockerfile`
+add-scripts:
+	cd  $(PROJECT_NAME) && jq '.scripts += {"migration:create": "npx typeorm-ts-node-commonjs migration:create ./migrations/InitMigration "}' package.json > temp.json && mv temp.json package.json
+	cd  $(PROJECT_NAME) && jq '.scripts += {"migration:generate": "npm run build && npx typeorm-ts-node-commonjs migration:generate ./migrations/InitMigration -d ./src/config/typeorm.config.ts"}' package.json > temp.json && mv temp.json package.json
+	cd  $(PROJECT_NAME) && jq '.scripts += {"migration:run": "npx typeorm-ts-node-commonjs migration:run -d ./src/config/typeorm.config.ts"}' package.json > temp.json && mv temp.json package.json
+	cd  $(PROJECT_NAME) && jq '.scripts += {"migration:revert": "npx typeorm-ts-node-commonjs migration:revert -d ./src/config/typeorm.config.ts"}' package.json > temp.json && mv temp.json package.json
+
+
+# Создает Dockerfile с нужными зависимостями
 create-dockerfile:
 	echo 'FROM node:20' > $(PROJECT_NAME)/Dockerfile
+	echo 'RUN apt-get update && apt-get install -y sqlite3 jq' >> $(PROJECT_NAME)/Dockerfile
+	echo 'RUN npm install -g ts-node typeorm ' >> $(PROJECT_NAME)/Dockerfile
 	echo 'WORKDIR /app' >> $(PROJECT_NAME)/Dockerfile
 	echo 'COPY package*.json ./' >> $(PROJECT_NAME)/Dockerfile
 	echo 'RUN npm install' >> $(PROJECT_NAME)/Dockerfile
 	echo 'COPY . .' >> $(PROJECT_NAME)/Dockerfile
 	echo 'RUN mkdir -p db' >> $(PROJECT_NAME)/Dockerfile
+	echo 'COPY docker-entrypoint.sh /docker-entrypoint.sh' >> $(PROJECT_NAME)/Dockerfile
+	echo 'RUN chmod +x /docker-entrypoint.sh' >> $(PROJECT_NAME)/Dockerfile
 	echo 'EXPOSE 3000' >> $(PROJECT_NAME)/Dockerfile
-	echo 'CMD npm run build && npm run typeorm migration:run -d typeorm.config.ts --name logs && npm start' >> $(PROJECT_NAME)/Dockerfile
+	echo 'CMD ENTRYPOINT ["/docker-entrypoint.sh"] ' >> $(PROJECT_NAME)/Dockerfile
+
+
+# Создает docker-entrypoint.sh с генерацией и применением миграций
+create-docker-entrypoint:
+	echo '#!/bin/sh' > $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'echo "🚀 Запуск NestJS..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'npm run start & ' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'echo "🕒 Ожидание запуска приложения..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'sleep 5' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'echo "📦 Создание новой миграции..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'npx typeorm-ts-node-commonjs migration:create ./migrations/InitMigration' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'echo "🔄 Генерация изменений в миграции..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'npx typeorm-ts-node-commonjs migration:generate ./migrations/InitMigration -d ./src/config/typeorm.config.ts' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'echo "✅ Применение миграций..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'npx typeorm-ts-node-commonjs migration:run -d ./src/config/typeorm.config.ts' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'echo "🎉 Миграции завершены! Ждём работу NestJS..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'wait -n' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'exec "$@"' >> $(PROJECT_NAME)/docker-entrypoint.sh
 
 # Creates `docker-compose.yml`
 create-docker-compose:
@@ -124,30 +173,34 @@ create-docker-compose:
 	echo '      - ./db:/app/db' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '      - .:/app' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '    environment:' >> $(PROJECT_NAME)/docker-compose.yml
-	echo '      NODE_ENV: production' >> $(PROJECT_NAME)/docker-compose.yml
-	echo '    command: npm run start' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      NODE_ENV: development' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    entrypoint: ["/docker-entrypoint.sh"]' >> $(PROJECT_NAME)/docker-compose.yml
 
 # Runs all initialization commands
-init: setup init-structure init-database create-ormconfig update-logs-service update-logs-module update-modules init-entities init-migrations create-dockerfile create-docker-compose
+init: setup init-structure create-ormconfig update-logs-service update-logs-module update-modules init-entities add-scripts create-docker-entrypoint create-dockerfile create-docker-compose
 
 # Starts the application in Docker
 start:
-	cd $(PROJECT_NAME) && $(DOCKER_COMPOSE) up --build -d
+	cd $(PROJECT_NAME) && $(DOCKER_COMPOSE) up --build
 
 # Stops the container
 stop:
 	cd $(PROJECT_NAME) && $(DOCKER_COMPOSE) down
 
-migrate:
-	cd $(PROJECT_NAME) && $(DOCKER) exec nest-app npm run typeorm migration:run -d ormconfig.ts
+migrate-run:
+	cd $(PROJECT_NAME) && $(DOCKER) exec nest-app npm run migration:run 
+migrate-create:
+	cd $(PROJECT_NAME) && $(DOCKER) exec nest-app npm run migration:create 
+migrate-g:
+	cd $(PROJECT_NAME) && $(DOCKER) exec nest-app npm run migration:generate 
 
 migrate-revert:
-	cd $(PROJECT_NAME) && $(DOCKER) exec nest-app npm run typeorm migration:revert -d ormconfig.ts
+	cd $(PROJECT_NAME) && $(DOCKER) exec nest-app npm run  migration:revert
 
 
 # Cleans up cache
 clean:
-	rm -rf $(PROJECT_NAME)/node_modules $(PROJECT_NAME)/dist
+	rm -rf $(PROJECT_NAME)/node_modules $(PROJECT_NAME)/dist $(PROJECT_NAME)/db
 
 # Reinstalls dependencies from scratch
 reinstall:
