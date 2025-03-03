@@ -171,7 +171,7 @@ create-docker-entrypoint:
 	echo 'npx typeorm-ts-node-commonjs migration:run -d ./src/config/typeorm.config.ts' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'sleep 2' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'echo "🛑 Завершаем старый процесс NestJS (PID $$NEST_PID)..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
-	echo 'sleep 2' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'sleep 3' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'kill $$NEST_PID' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'wait $$NEST_PID' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	
