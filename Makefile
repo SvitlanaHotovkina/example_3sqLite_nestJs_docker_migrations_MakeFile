@@ -127,46 +127,80 @@ add-scripts:
 
 
 # Создает Dockerfile с нужными зависимостями
-create-dockerfile:
-	echo 'FROM node:20' > $(PROJECT_NAME)/Dockerfile
-	echo 'RUN apt-get update && apt-get install -y sqlite3 jq' >> $(PROJECT_NAME)/Dockerfile
-	echo 'RUN npm install -g ts-node typeorm ' >> $(PROJECT_NAME)/Dockerfile
-	echo 'WORKDIR /app' >> $(PROJECT_NAME)/Dockerfile
-	echo 'COPY package*.json ./' >> $(PROJECT_NAME)/Dockerfile
-	echo 'RUN npm install' >> $(PROJECT_NAME)/Dockerfile
-	echo 'COPY . .' >> $(PROJECT_NAME)/Dockerfile
-	echo 'RUN mkdir -p db' >> $(PROJECT_NAME)/Dockerfile
-	echo 'COPY docker-entrypoint.sh /docker-entrypoint.sh' >> $(PROJECT_NAME)/Dockerfile
-	echo 'RUN chmod +x /docker-entrypoint.sh' >> $(PROJECT_NAME)/Dockerfile
-	echo 'EXPOSE 3000' >> $(PROJECT_NAME)/Dockerfile
-	echo 'CMD ENTRYPOINT ["/docker-entrypoint.sh"] ' >> $(PROJECT_NAME)/Dockerfile
+create-dockerfile-m:
+	echo 'FROM node:20' > $(PROJECT_NAME)/Dockerfile.migration
+	echo 'RUN apt-get update && apt-get install -y sqlite3 jq' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'RUN npm install -g ts-node typeorm ' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'WORKDIR /app' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'COPY package*.json ./' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'RUN npm install' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'COPY . .' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'RUN mkdir -p db' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'COPY docker-entrypoint.sh /docker-entrypoint.sh' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'RUN chmod +x /docker-entrypoint.sh' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'EXPOSE 3000' >> $(PROJECT_NAME)/Dockerfile.migration
+	echo 'CMD ENTRYPOINT ["/docker-entrypoint.sh"] ' >> $(PROJECT_NAME)/Dockerfile.migration
 
 
-# Создает docker-entrypoint.sh с генерацией и применением миграций
+# Создает Dockerfile с нужными зависимостями
+create-dockerfile-app:
+	echo 'FROM node:20' > $(PROJECT_NAME)/Dockerfile.app
+	echo 'RUN apt-get update && apt-get install -y sqlite3 jq' >> $(PROJECT_NAME)/Dockerfile.app
+	echo 'RUN npm install -g ts-node typeorm ' >> $(PROJECT_NAME)/Dockerfile.app
+	echo 'WORKDIR /app' >> $(PROJECT_NAME)/Dockerfile.app
+	echo 'COPY package*.json ./' >> $(PROJECT_NAME)/Dockerfile.app
+	echo 'RUN npm install' >> $(PROJECT_NAME)/Dockerfile.app
+	echo 'COPY . .' >> $(PROJECT_NAME)/Dockerfile.app
+	echo 'EXPOSE 3000' >> $(PROJECT_NAME)/Dockerfile.app
+	echo 'RUN npm run build' >> $(PROJECT_NAME)/Dockerfile.app
+	echo 'CMD ["npm", "run", "start:dev"] ' >> $(PROJECT_NAME)/Dockerfile.app
+
+# Создает docker-entrypoint.sh с генерацией, применением миграций и перезапуском NestJS
 create-docker-entrypoint:
 	echo '#!/bin/sh' > $(PROJECT_NAME)/docker-entrypoint.sh
-	echo 'echo "🚀 Запуск NestJS..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
-	echo 'npm run start & ' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'echo "🚀 Запуск NestJS в фоне..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'npm run start:dev & ' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'NEST_PID=$$!' >> $(PROJECT_NAME)/docker-entrypoint.sh # Сохраняем PID процесса NestJS
 	echo 'echo "🕒 Ожидание запуска приложения..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
-	echo 'sleep 5' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'sleep 2' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'echo "📦 Создание новой миграции..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'npx typeorm-ts-node-commonjs migration:create ./migrations/InitMigration' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'echo "🔄 Генерация изменений в миграции..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'npx typeorm-ts-node-commonjs migration:generate ./migrations/InitMigration -d ./src/config/typeorm.config.ts' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'echo "✅ Применение миграций..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
 	echo 'npx typeorm-ts-node-commonjs migration:run -d ./src/config/typeorm.config.ts' >> $(PROJECT_NAME)/docker-entrypoint.sh
-	echo 'echo "🎉 Миграции завершены! Ждём работу NestJS..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
-	echo 'wait -n' >> $(PROJECT_NAME)/docker-entrypoint.sh
-	echo 'exec "$@"' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'sleep 2' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'echo "🛑 Завершаем старый процесс NestJS (PID $$NEST_PID)..."' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'sleep 2' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'kill $$NEST_PID' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	echo 'wait $$NEST_PID' >> $(PROJECT_NAME)/docker-entrypoint.sh
+	
 
 # Creates `docker-compose.yml`
 create-docker-compose:
 	echo 'version: "3.8"' > $(PROJECT_NAME)/docker-compose.yml
+	echo '' >> $(PROJECT_NAME)/docker-compose.yml
 	echo 'services:' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '  migrations:' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    container_name: nest-migrations' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    build:' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      context: .' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      dockerfile: Dockerfile.migration' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    volumes:' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      - ./db:/app/db' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      - .:/app' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    environment:' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      NODE_ENV: development' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    entrypoint: ["/docker-entrypoint.sh"]' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    restart: "no"' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '  app:' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '    container_name: nest-app' >> $(PROJECT_NAME)/docker-compose.yml
-	echo '    build: .' >> $(PROJECT_NAME)/docker-compose.yml
-	echo '    restart: unless-stopped' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    build:' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      context: .' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      dockerfile: Dockerfile.app' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    depends_on:' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '      - migrations' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '    ports:' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '      - "3000:3000"' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '    volumes:' >> $(PROJECT_NAME)/docker-compose.yml
@@ -174,10 +208,11 @@ create-docker-compose:
 	echo '      - .:/app' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '    environment:' >> $(PROJECT_NAME)/docker-compose.yml
 	echo '      NODE_ENV: development' >> $(PROJECT_NAME)/docker-compose.yml
-	echo '    entrypoint: ["/docker-entrypoint.sh"]' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    restart: unless-stopped' >> $(PROJECT_NAME)/docker-compose.yml
+	echo '    command: npm run start:dev' >> $(PROJECT_NAME)/docker-compose.yml
 
 # Runs all initialization commands
-init: setup init-structure create-ormconfig update-logs-service update-logs-module update-modules init-entities add-scripts create-docker-entrypoint create-dockerfile create-docker-compose
+init: setup init-structure create-ormconfig update-logs-service update-logs-module update-modules init-entities add-scripts create-docker-entrypoint create-dockerfile-app create-dockerfile-m create-docker-compose
 
 # Starts the application in Docker
 start:
@@ -200,7 +235,7 @@ migrate-revert:
 
 # Cleans up cache
 clean:
-	rm -rf $(PROJECT_NAME)/node_modules $(PROJECT_NAME)/dist $(PROJECT_NAME)/db
+	sudo rm -rf $(PROJECT_NAME)/node_modules $(PROJECT_NAME)/dist $(PROJECT_NAME)/db $(PROJECT_NAME)/migrations
 
 # Reinstalls dependencies from scratch
 reinstall:

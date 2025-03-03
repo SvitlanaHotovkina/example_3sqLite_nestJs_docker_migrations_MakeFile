@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  migrations:
+    container_name: nest-migrations
+    build:
+      context: .
+      dockerfile: Dockerfile.migration
+    volumes:
+      - ./db:/app/db
+      - .:/app
+    environment:
+      NODE_ENV: development
+    entrypoint: ["/docker-entrypoint.sh"]
+    restart: "no"
+
+  app:
+    container_name: nest-app
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    depends_on:
+      - migrations
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./db:/app/db
+      - .:/app
+    environment:
+      NODE_ENV: development
+    restart: unless-stopped
+    command: npm run start:dev

@@ -1,0 +1,12 @@
+FROM node:20
+RUN apt-get update && apt-get install -y sqlite3 jq
+RUN npm install -g ts-node typeorm 
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN mkdir -p db
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+EXPOSE 3000
+CMD ENTRYPOINT ["/docker-entrypoint.sh"] 
